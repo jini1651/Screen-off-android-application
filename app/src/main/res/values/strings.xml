@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Screenoff_App</string>
+    <string name="device_admin_label">SAMPLE DEVICE ADMIN</string>
+    <string name="device_admin_description">DESCRIPTION</string>
+    <string name="jini_s_app">jini\'s app</string>
+    <string name="screen_off">SCREEN OFF</string>
+</resources>
