@@ -1,26 +1,19 @@
 package com.example.screenoff_app;
 
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.app.Service;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
-import android.net.Uri;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
-import android.view.View;
-import android.widget.ArrayAdapter;
-import android.widget.EditText;
-import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.core.app.ActivityCompat;
 
 import com.google.android.gms.vision.CameraSource;
 import com.google.android.gms.vision.Detector;
@@ -30,82 +23,30 @@ import com.google.android.gms.vision.face.Face;
 import com.google.android.gms.vision.face.FaceDetector;
 
 import java.io.IOException;
-import java.util.ArrayList;
 
-public class MainActivity extends AppCompatActivity {
-    private static final String TAG = "MainActivity";
-    EditText textView2;
-    EditText textView3;
+import static androidx.core.app.ActivityCompat.startActivityForResult;
 
-    ArrayAdapter adapter;
-    ArrayList<String> list = new ArrayList<>();
+public class ShutdownAdminService extends Service {
+    private IBinder mBinder = new LocalBinder();
 
     CameraSource cameraSource;
 
     long startTime;
     long onMissingTime = 0;
 
-    boolean mBound;
-    Service mService;
+    public ShutdownAdminService() {
+    }
 
-    @SuppressLint("WrongViewCast")
+    public class LocalBinder extends Binder {
+        public ShutdownAdminService getService(){
+            return ShutdownAdminService.this;
+        }
+    }
+
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 1);
-            Toast.makeText(this, "Grant Permission and restart app", Toast.LENGTH_SHORT).show();
-        }
-        else {
-            textView2 = (EditText) findViewById(R.id.textView2);
-            textView3 = (EditText) findViewById(R.id.textView3);
-            adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, list);
-        }
-    }
-
-    /*private ServiceConnection mConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            ShutdownAdminService.LocalBinder binder = (ShutdownAdminService.LocalBinder)service;
-            mService = binder.getService();
-            mBound = true;
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            mBound = false;
-        }
-    };*/
-
-    protected void onNewIntent(Intent intent) {
-        processIntent(intent);
-
-        super.onNewIntent(intent);
-    }
-
-    public void btnClick(View v) {
-        Intent intent = new Intent(this, ShutdownAdminService.class);
-        intent.putExtra("signal", true);
-        startService(intent);
-
-        Intent passedIntent;
-        do {
-            passedIntent = getIntent();
-        }
-        while (passedIntent != null & passedIntent.getBooleanExtra("signal", false) != true);
-
-        turnScreenOff(getApplicationContext());
-    }
-
-    private void processIntent(Intent intent) {
-        if (intent != null) {
-            boolean signal = intent.getBooleanExtra("signal", false);
-
-            if (signal)    {turnScreenOff(getApplicationContext());}
-        }
+    public IBinder onBind(Intent intent) {
+        // TODO: Return the communication channel to the service.
+        throw new UnsupportedOperationException("Not yet implemented");
     }
 
     void turnScreenOff(Context context){
@@ -116,13 +57,26 @@ public class MainActivity extends AppCompatActivity {
         if(!devicePolicyManager.isAdminActive(componentName)) {
             Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName);
-            startActivityForResult(intent, 0);
+            startActivityForResult(MainActivity,ShutdownAdminService.this, 0);
             return;
         }
         devicePolicyManager.lockNow();
     }
 
-    public class EyesTracker extends Tracker<Face> {
+    public int onStartCommand(Intent intent, int flags, int startId) {
+
+        if (intent == null) return Service.START_STICKY;
+        else {
+            boolean signal = intent.getBooleanExtra("signal", false);
+            if (signal)    createCameraSource();
+            else            return Service.START_STICKY;
+        }
+        Toast.makeText(ShutdownAdminService.this, "started!", Toast.LENGTH_LONG).show();
+
+        return super.onStartCommand(intent, flags, startId);
+    }
+
+    private class EyesTracker extends Tracker<Face> {
 
         private final float THRESHOLD = 0.75f;
 
@@ -133,26 +87,24 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onUpdate(Detector.Detections<Face> detections, Face face) {
             if (face.getIsLeftEyeOpenProbability() > THRESHOLD || face.getIsRightEyeOpenProbability() > THRESHOLD) {
-                Log.i(TAG, "onUpdate: Eyes Detected");
-                showStatus("Eyes Detected!");
                 startTime = System.currentTimeMillis();
-                showMissingTime(onMissingTime);
-            }
-            else {
-                showStatus("Eyes Not Detected!");
+            } else {
                 onMissingTime = System.currentTimeMillis() - startTime;
-                showMissingTime(onMissingTime);
-                if (onMissingTime >= 5000) { turnScreenOff(getApplicationContext());}
+                if (onMissingTime >= 5000) {
+                    Intent returnIntent = new Intent(getApplicationContext(), MainActivity.class);
+                    returnIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    returnIntent.putExtra("message", true);
+                    startActivity(returnIntent);
+                }
             }
         }
 
         @Override
         public void onMissing(Detector.Detections<Face> detections) {
             super.onMissing(detections);
-            showStatus("Face Not Detected yet!");
             onMissingTime = System.currentTimeMillis() - startTime;
-            showMissingTime(onMissingTime);
             //if (onMissingTime >= 5000) { turnScreenOff(getApplicationContext());}
+            Toast.makeText(ShutdownAdminService.this, "face not detected!", Toast.LENGTH_LONG).show();
         }
 
         @Override
@@ -191,9 +143,9 @@ public class MainActivity extends AppCompatActivity {
             e.printStackTrace();
         }
     }
-    class FaceTrackerFactory implements MultiProcessor.Factory<Face> {
+    public class FaceTrackerFactory implements MultiProcessor.Factory<Face> {
 
-        public FaceTrackerFactory() {
+        private FaceTrackerFactory() {
 
         }
 
@@ -201,23 +153,5 @@ public class MainActivity extends AppCompatActivity {
         public Tracker<Face> create(Face face) {
             return new EyesTracker();
         }
-    }
-
-    public void showStatus(final String message) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                textView2.setText(message);
-            }
-        });
-    }
-
-    public void showMissingTime(final long time) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                textView2.setText("onMissingTime : "+time);
-            }
-        });
     }
 }
